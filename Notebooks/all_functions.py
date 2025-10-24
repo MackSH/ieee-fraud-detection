@@ -1,3 +1,9 @@
+import pandas as pd
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+
 def top_missing_cols(df,n=10,thresh=80):
     """
     Renvoie les colonnes manquantes dans le dataframe avec des valeurs manquantes de pourcentage > threesh si n = Aucun. Le dataframe complet sera renvoyé avec des valeurs manquantes de pourcentage > threesh.
