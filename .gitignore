@@ -1,5 +1,8 @@
 /Data
-/API_&_ Dashboard
+/API_&_ Dashboard/__pycache__
 /Notebooks/catboost_info
 /Notebooks/__pycache__
 /Notebooks/01_data_explloration.ipynb11
+/Notebooks/pwob.ipynb
+test.py
+/Notebooks/df_train_columns.txt
