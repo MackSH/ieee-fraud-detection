@@ -4,6 +4,7 @@ import requests
 import io
 import matplotlib.pyplot as plt
 import seaborn as sns
+import math
 
 # --- Config Streamlit ---
 st.set_page_config(page_title="🧠 Fraud Detection Dashboard", layout="wide")
@@ -15,7 +16,7 @@ transaction_file = st.file_uploader("📂 Transaction CSV", type=["csv"])
 identity_file = st.file_uploader("📂 Identity CSV (optionnel)", type=["csv"])
 process_btn = st.button("🚀 Lancer la prédiction")
 
-# Stocker les prédictions dans la session
+# --- Stocker les prédictions dans la session ---
 if "df_pred" not in st.session_state:
     st.session_state.df_pred = None
 
@@ -28,6 +29,21 @@ if process_btn and transaction_file:
         if response.status_code == 200:
             st.session_state.df_pred = pd.read_csv(io.BytesIO(response.content))
             st.success("✅ Prédiction terminée !")
+
+            # --- 🔁 Inverser le scaling sur TransactionAmt ---
+            # 👉 Remplace ces valeurs par les min/max réels de ton dataset original
+            TRANSACTION_AMT_MIN = 0.0
+            TRANSACTION_AMT_MAX = 10000.0
+
+            df = st.session_state.df_pred.copy()
+
+            if 'TransactionAmt' in df.columns:
+                df['TransactionAmt'] = df['TransactionAmt'].apply(
+                    lambda x: (x * (TRANSACTION_AMT_MAX - TRANSACTION_AMT_MIN)) + TRANSACTION_AMT_MIN
+                    if not math.isnan(x) and x != -1 else None
+                )
+
+            st.session_state.df_pred = df
         else:
             st.error(f"Erreur API: {response.status_code}")
 
@@ -39,6 +55,16 @@ if st.session_state.df_pred is not None:
     st.sidebar.header("🎨 Paramètres d'affichage")
     width = st.sidebar.slider("📏 Largeur du graphique", 6, 20, 12)
     height = st.sidebar.slider("📐 Hauteur du graphique", 4, 12, 5)
+
+    # --- Limiter la taille des données pour les graphiques ---
+    st.sidebar.subheader("⚙️ Options d’affichage avancées")
+    limit_data = st.sidebar.checkbox("Limiter à 5000 lignes pour les graphiques", value=True)
+
+    if limit_data and len(df_pred) > 5000:
+        df_plot = df_pred.sample(5000, random_state=42)
+        st.sidebar.info("✅ Données échantillonnées (5000 lignes utilisées pour les graphiques).")
+    else:
+        df_plot = df_pred
 
     # --- Recherche & modification de transaction ---
     st.subheader("🔍 Rechercher et modifier une transaction")
@@ -89,14 +115,14 @@ if st.session_state.df_pred is not None:
 
     with colA:
         st.subheader("🎯 Distribution isFraud")
-        fig, ax = plt.subplots(figsize=(width, height))
-        sns.countplot(x='isFraud', data=df_pred, ax=ax)
-        total = len(df_pred)
+        fig, ax = plt.subplots(figsize=(width, height), dpi=80)
+        sns.countplot(x='isFraud', data=df_plot, ax=ax)
+        total = len(df_plot)
         for p in ax.patches:
-            height = p.get_height()
-            ax.text(p.get_x() + p.get_width()/2., height + 3,
-                    f"{height*100/total:.2f}%", ha='center')
-        ax.set_title("Répartition des transactions")
+            height_p = p.get_height()
+            ax.text(p.get_x() + p.get_width()/2., height_p + 3,
+                    f"{height_p*100/total:.2f}%", ha='center')
+        ax.set_title("Répartition des transactions (échantillon)" if limit_data else "Répartition des transactions")
         st.pyplot(fig)
 
     with colB:
@@ -105,11 +131,11 @@ if st.session_state.df_pred is not None:
         st.dataframe(top_risk[['TransactionID', 'TransactionAmt', 'card1', 'ProductCD', 'isFraud']])
 
     # --- Ligne 2 : Fraude par jour de semaine & Histogramme ---
-    df_pred['dayofweek'] = (df_pred['TransactionDT']//(60*60*24)-1)%7
+    df_plot['dayofweek'] = (df_plot['TransactionDT']//(60*60*24)-1)%7
 
-    tmp = df_pred[['isFraud', 'dayofweek']].groupby('dayofweek').mean().reset_index() \
+    tmp = df_plot[['isFraud', 'dayofweek']].groupby('dayofweek').mean().reset_index() \
         .rename(columns={'isFraud': 'Percentage fraud transactions'})
-    tmp_count = df_pred[['TransactionID', 'dayofweek']].groupby('dayofweek').count().reset_index() \
+    tmp_count = df_plot[['TransactionID', 'dayofweek']].groupby('dayofweek').count().reset_index() \
         .rename(columns={'TransactionID': 'Number of transactions'})
     tmp = tmp.merge(tmp_count, on='dayofweek')
 
@@ -117,17 +143,25 @@ if st.session_state.df_pred is not None:
 
     with colC:
         st.subheader("📅 Fraudes vs Jour de la semaine")
-        fig2, ax2 = plt.subplots(figsize=(width, height))
+        fig2, ax2 = plt.subplots(figsize=(width, height), dpi=80)
         sns.lineplot(x='dayofweek', y='Percentage fraud transactions', data=tmp, color='r', ax=ax2)
         ax3 = ax2.twinx()
-        sns.barplot(x='dayofweek', y='Number of transactions', data=tmp, palette='summer', ax=ax3)
+        sns.barplot(
+            x='dayofweek',
+            y='Number of transactions',
+            hue='dayofweek',
+            data=tmp,
+            palette='summer',
+            legend=False,
+            ax=ax3
+        )
         ax2.set_title("Fraude par jour de la semaine")
         st.pyplot(fig2)
 
     with colD:
         st.subheader("📈 Distribution des prédictions de fraude")
-        fig3, ax3 = plt.subplots(figsize=(width, height))
-        sns.histplot(df_pred['isFraud'], bins=2, ax=ax3, color='green')
+        fig3, ax3 = plt.subplots(figsize=(width, height), dpi=80)
+        sns.histplot(df_plot['isFraud'], bins=2, ax=ax3, color='green')
         ax3.set_title("Histogramme des prédictions de fraude")
         st.pyplot(fig3)
 
@@ -136,16 +170,16 @@ if st.session_state.df_pred is not None:
 
     with colE:
         st.subheader("💵 Montant moyen par statut de fraude")
-        avg_amt = df_pred.groupby('isFraud')['TransactionAmt'].mean().reset_index()
-        fig4, ax4 = plt.subplots(figsize=(width, height))
+        avg_amt = df_plot.groupby('isFraud')['TransactionAmt'].mean().reset_index()
+        fig4, ax4 = plt.subplots(figsize=(width, height), dpi=80)
         sns.barplot(x='isFraud', y='TransactionAmt', data=avg_amt, palette='coolwarm', ax=ax4)
         ax4.set_title("Montant moyen des transactions")
         st.pyplot(fig4)
 
     with colF:
         st.subheader("🧩 Exemple de graphique libre")
-        fig5, ax5 = plt.subplots(figsize=(width, height))
-        sns.boxplot(x='isFraud', y='TransactionAmt', data=df_pred, ax=ax5, palette='mako')
+        fig5, ax5 = plt.subplots(figsize=(width, height), dpi=80)
+        sns.boxplot(x='isFraud', y='TransactionAmt', data=df_plot, ax=ax5, palette='mako')
         ax5.set_title("Distribution des montants par statut")
         st.pyplot(fig5)
 

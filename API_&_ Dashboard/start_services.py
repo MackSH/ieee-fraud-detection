@@ -2,6 +2,9 @@ import subprocess
 import time
 import os
 import sys  # <-- on va utiliser python actuel
+from PIL import Image
+Image.MAX_IMAGE_PIXELS = None
+
 
 def run_services():
     os.chdir(os.path.dirname(__file__))
